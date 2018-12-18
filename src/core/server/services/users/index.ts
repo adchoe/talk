@@ -2,6 +2,8 @@ import { Db } from "mongodb";
 
 import { Tenant } from "talk-server/models/tenant";
 import {
+  createUserToken,
+  deactivateUserToken,
   LocalProfile,
   setUserEmail,
   setUserLocalProfile,
@@ -11,6 +13,7 @@ import {
   UpsertUserInput,
   User,
 } from "talk-server/models/user";
+import { JWTSigningConfig, signPATString } from "../jwt";
 
 const USERNAME_REGEX = new RegExp(/^[a-zA-Z0-9_]+$/);
 const USERNAME_MAX_LENGTH = 30;
@@ -220,4 +223,40 @@ export async function updatePassword(
   validatePassword(tenant, password);
 
   return updateUserPassword(mongo, tenant.id, user.id, password);
+}
+
+export async function createToken(
+  mongo: Db,
+  tenant: Tenant,
+  config: JWTSigningConfig,
+  user: User,
+  name: string
+) {
+  // Create the token for the User!
+  const result = await createUserToken(mongo, tenant.id, user.id, name);
+
+  // Sign the token!
+  const signedToken = await signPATString(config, user, {
+    // Tokens are issued with the token ID as their JWT ID.
+    jwtid: result.token.id,
+
+    // Tokens are issued with the tenant ID.
+    issuer: tenant.id,
+  });
+
+  return { ...result, signedToken };
+}
+
+export async function deactivateToken(
+  mongo: Db,
+  tenant: Tenant,
+  user: User,
+  id: string
+) {
+  if (!user.tokens.find(t => t.id === id)) {
+    // TODO: (wyattjoh) return better error
+    throw new Error("token not found on user");
+  }
+
+  return deactivateUserToken(mongo, tenant.id, user.id, id);
 }
